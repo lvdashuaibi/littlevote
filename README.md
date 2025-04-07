@@ -180,3 +180,177 @@ Little Vote是一个高并发分布式投票系统，通过票据机制控制投
 - **高并发场景下投票数量验证**：对单个用户、多个用户采用上述高并发配置进行投票的时候，将单张ticket使用次数限制提高到100000，也就是在现有系统的基础上无法达到的数值，得到数据库中用户票数与服务端响应成功数是一致的，说明系统投票功能没有出现并发问题。
 - **ticekt过期时间验证**：还是同样的高并发场景下，获取ticket等待2s之后再进行投票，测试30s后系统成功投出0张票，说明ticket的合法性验证是正确的。
 
+## 12. API接口文档
+
+Little Vote系统使用GraphQL API提供服务。GraphQL端点默认为`/graphql`，并提供了一个交互式Playground界面用于测试。
+
+### 12.1 数据类型
+
+#### UserVote
+用户投票信息类型
+```graphql
+type UserVote {
+  username: String!      # 用户名（A-Z）
+  votes: Int!            # 用户的票数
+  updatedAt: String!     # 最后更新时间（RFC3339格式）
+}
+```
+
+#### Ticket
+票据信息类型
+```graphql
+type Ticket {
+  value: String!         # 票据值
+  version: String!       # 票据版本
+  remainingUsages: Int!  # 剩余使用次数
+  expiresAt: String!     # 过期时间（RFC3339格式）
+  createdAt: String!     # 创建时间（RFC3339格式）
+}
+```
+
+#### VoteResponse
+投票操作响应类型
+```graphql
+type VoteResponse {
+  success: Boolean!      # 操作是否成功
+  message: String!       # 操作结果消息
+  usernames: [String!]!  # 投票的用户名列表
+  timestamp: String!     # 操作时间戳（RFC3339格式）
+}
+```
+
+### 12.2 查询接口
+
+#### 获取当前票据
+获取当前可用的最新票据。
+```graphql
+query {
+  getTicket {
+    value
+    version
+    remainingUsages
+    expiresAt
+    createdAt
+  }
+}
+```
+
+#### 查询用户票数
+查询指定用户的当前票数。
+```graphql
+query {
+  getUserVotes(username: "A") {
+    username
+    votes
+    updatedAt
+  }
+}
+```
+
+#### 查询所有用户票数
+查询所有用户的当前票数。
+```graphql
+query {
+  getAllUserVotes {
+    username
+    votes
+    updatedAt
+  }
+}
+```
+
+### 12.3 变更接口
+
+#### 投票
+使用指定票据为一个或多个用户投票。
+```graphql
+mutation {
+  vote(input: {
+    usernames: ["A", "B"],
+    ticket: {
+      value: "例:xxxxxxxxxx",
+      version: "例:1714183361",
+      remainingUsages: 999,
+      expiresAt: "2023-04-27T15:29:21+08:00",
+      createdAt: "2023-04-27T15:27:21+08:00"
+    }
+  }) {
+    success
+    message
+    usernames
+    timestamp
+  }
+}
+```
+
+#### 获取票据并立即投票
+一步完成获取票据并为一个或多个用户投票的操作。
+```graphql
+mutation {
+  ticketAndVote(usernames: ["A", "B"]) {
+    success
+    message
+    usernames
+    timestamp
+  }
+}
+```
+
+### 12.4 错误处理
+
+API中的错误分为两类：
+1. **GraphQL错误**：这些错误会在响应的`errors`字段中返回
+2. **业务逻辑错误**：这些错误会通过响应对象的`success`和`message`字段返回
+
+常见错误包括：
+- 票据已过期或版本不匹配
+- 票据使用次数已耗尽
+- 用户名格式不正确（必须为A-Z）
+- 系统内部错误
+
+### 12.5 使用示例
+
+**获取票据并投票的完整流程示例**：
+
+```graphql
+# 第一步：获取票据
+query {
+  getTicket {
+    value
+    version
+    remainingUsages
+    expiresAt
+    createdAt
+  }
+}
+
+# 第二步：使用获取的票据进行投票
+mutation {
+  vote(input: {
+    usernames: ["A"],
+    ticket: {
+      value: "获取的票据value",
+      version: "获取的票据version",
+      remainingUsages: 获取的票据remainingUsages,
+      expiresAt: "获取的票据expiresAt",
+      createdAt: "获取的票据createdAt"
+    }
+  }) {
+    success
+    message
+    usernames
+    timestamp
+  }
+}
+
+# 或者使用一步完成的方式
+mutation {
+  ticketAndVote(usernames: ["A"]) {
+    success
+    message
+    usernames
+    timestamp
+  }
+}
+```
+
