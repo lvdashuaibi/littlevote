@@ -169,7 +169,7 @@ Little Vote是一个高并发分布式投票系统，通过票据机制控制投
 - 一键启动和停止脚本简化了部署过程。 
 - 可采用scripts/start.sh 和 scripts/stop.sh一键启动停止
 
-## 9. 性能优化日志
+## 10. 性能优化日志
 - 以下性能结果是针对于4核4G的机器，单实例部署Redis，并且访问每次投票都获取一次ticket得到的结果。
 - 修改ticket从Redlock改为ETCD Lock之后，性能由 200+ QPS 提升到 700+ QPS
 - 修改ticekt操作由加分布式锁改为在Redis中使用LUA原子操作更新，并异步更新MySQL之后，性能由 700+ QPS提升到 3200+ QPS
