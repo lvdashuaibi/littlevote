@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+mysql:
+  master: "root:root@tcp(localhost:3306)/littlevote?charset=utf8mb4&parseTime=true"
+  slave: "root:root@tcp(localhost:3307)/littlevote?charset=utf8mb4&parseTime=true"
+  max_open_conns: 50
+  max_idle_conns: 10
+
+redis:
+  # 数据存储Redis
+  data_address: "localhost:6382"
+  password: ""
+  db: 0
+  pool_size: 100
+  max_retries: 3
+  timeout: 3s
+  
+  # Redlock使用的Redis节点
+  lock_addresses:
+    - "localhost:6379"
+    - "localhost:6380"
+    - "localhost:6381"
+
+kafka:
+  brokers:
+    - "localhost:9092"
+  topic: "vote-events"
+  partition: 8
+  group_id: "littlevote-group"
+
+ticket:
+  refresh_interval: 2s
+  max_usage_count: 500
+  lock_timeout: 30s
+  lock_retry_count: 1
+
+etcd:
+  endpoints:
+    - "localhost:2379"
+  dial_timeout: 5s
+  request_timeout: 10s
+  session_ttl: 30s
+
+graphql:
+  path: "/graphql" 

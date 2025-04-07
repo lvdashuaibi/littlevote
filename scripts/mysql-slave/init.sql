@@ -1,0 +1,18 @@
+-- 设置主从复制
+CHANGE MASTER TO
+  MASTER_HOST='mysql-master',
+  MASTER_USER='repl',
+  MASTER_PASSWORD='repl',
+  MASTER_PORT=3306,
+  MASTER_LOG_FILE='mysql-bin.000001',
+  MASTER_LOG_POS=0,
+  MASTER_CONNECT_RETRY=10;
+
+-- 启动从库复制
+START SLAVE;
+
+-- 允许root用户远程连接
+DROP USER IF EXISTS 'root'@'%';
+CREATE USER 'root'@'%' IDENTIFIED BY 'root';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES; 
