@@ -76,7 +76,7 @@ services:
       - redis-net
     ports:
       - "6382:6379"
-    command: ["redis-server", "--appendonly", "yes"]
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "4gb", "--maxmemory-policy", "volatile-lru", "--hz", "30"]
     volumes:
       - redis-data:/data
 

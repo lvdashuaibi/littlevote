@@ -4,15 +4,15 @@ server:
 mysql:
   master: "root:root@tcp(localhost:3306)/littlevote?charset=utf8mb4&parseTime=true"
   slave: "root:root@tcp(localhost:3307)/littlevote?charset=utf8mb4&parseTime=true"
-  max_open_conns: 50
-  max_idle_conns: 10
+  max_open_conns: 2000
+  max_idle_conns: 1000
 
 redis:
   # 数据存储Redis
   data_address: "localhost:6382"
   password: ""
   db: 0
-  pool_size: 100
+  pool_size: 5000
   max_retries: 3
   timeout: 3s
   

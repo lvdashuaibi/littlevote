@@ -18,11 +18,33 @@ const (
 	TicketVersionKey  = "ticket:newest:version"
 	TicketLockKey     = "ticket:lock:"
 	TicketProducerKey = "ticket:producer:lock"
+
+	// Lua脚本
+	DecrementTicketUsageScript = `
+		-- 获取剩余使用次数
+		local remaining = tonumber(redis.call('HGET', KEYS[1], 'remainingUsages'))
+		if not remaining then
+			return {-1, "票据数据损坏"}
+		end
+		
+		-- 检查剩余使用次数
+		if remaining <= 0 then
+			return {-1, "票据使用次数已耗尽"}
+		end
+		
+		-- 减少使用次数并更新
+		remaining = remaining - 1
+		redis.call('HSET', KEYS[1], 'remainingUsages', remaining)
+		
+		-- 返回更新后的剩余次数
+		return {0, remaining}
+	`
 )
 
 type RedisRepository struct {
-	client *redis.Client
-	ctx    context.Context
+	client       *redis.Client
+	ctx          context.Context
+	scriptHashes map[string]string // 存储脚本SHA1哈希值
 }
 
 func NewRedisRepository() (*RedisRepository, error) {
@@ -45,10 +67,30 @@ func NewRedisRepository() (*RedisRepository, error) {
 		return nil, fmt.Errorf("Redis数据节点连接测试失败: %w", err)
 	}
 
-	return &RedisRepository{
-		client: client,
-		ctx:    ctx,
-	}, nil
+	repo := &RedisRepository{
+		client:       client,
+		ctx:          ctx,
+		scriptHashes: make(map[string]string),
+	}
+
+	// 预加载Lua脚本
+	if err := repo.preloadScripts(); err != nil {
+		return nil, fmt.Errorf("预加载Lua脚本失败: %w", err)
+	}
+
+	return repo, nil
+}
+
+// preloadScripts 预加载所有Lua脚本
+func (r *RedisRepository) preloadScripts() error {
+	// 预加载减少票据使用次数的脚本
+	sha1, err := r.client.ScriptLoad(r.ctx, DecrementTicketUsageScript).Result()
+	if err != nil {
+		return fmt.Errorf("加载票据使用次数脚本失败: %w", err)
+	}
+	r.scriptHashes["decrementTicketUsage"] = sha1
+
+	return nil
 }
 
 // GetUserVote 从缓存获取用户票数
@@ -232,34 +274,40 @@ func (r *RedisRepository) ValidateTicket(ticket *model.Ticket) (bool, error) {
 	return true, nil
 }
 
-// 使用Lua脚本减少票据的使用次数，保证原子性
+// DecrementTicketUsage 使用预加载的Lua脚本减少票据的使用次数，保证原子性
 func (r *RedisRepository) DecrementTicketUsage(version string) (int, error) {
 	key := TicketKey + version
-	script := `
-		
-		-- 获取剩余使用次数
-		local remaining = tonumber(redis.call('HGET', KEYS[1], 'remainingUsages'))
-		if not remaining then
-			return {-1, "票据数据损坏"}
-		end
-		
-		-- 检查剩余使用次数
-		if remaining <= 0 then
-			return {-1, "票据使用次数已耗尽"}
-		end
-		
-		-- 减少使用次数并更新
-		remaining = remaining - 1
-		redis.call('HSET', KEYS[1], 'remainingUsages', remaining)
-		
-		-- 返回更新后的剩余次数
-		return {0, remaining}
-	`
 
-	// 执行脚本，传入票据键和最新票据版本键，以及当前票据版本
-	result, err := r.client.Eval(r.ctx, script, []string{key, TicketVersionKey}, version).Result()
+	// 获取预加载脚本的SHA1哈希值
+	sha1, ok := r.scriptHashes["decrementTicketUsage"]
+	if !ok {
+		return 0, fmt.Errorf("脚本未预加载")
+	}
+
+	// 使用EVALSHA执行脚本
+	var result interface{}
+	var err error
+
+	// 尝试使用EVALSHA执行
+	result, err = r.client.EvalSha(r.ctx, sha1, []string{key, TicketVersionKey}, version).Result()
 	if err != nil {
-		return 0, fmt.Errorf("减少票据使用次数失败: %w", err)
+		// 如果脚本不存在，重新加载并再次尝试
+		if err.Error() == "NOSCRIPT No matching script. Please use EVAL." {
+			// 重新加载脚本
+			sha1, err = r.client.ScriptLoad(r.ctx, DecrementTicketUsageScript).Result()
+			if err != nil {
+				return 0, fmt.Errorf("重新加载票据使用次数脚本失败: %w", err)
+			}
+			r.scriptHashes["decrementTicketUsage"] = sha1
+
+			// 再次尝试执行
+			result, err = r.client.EvalSha(r.ctx, sha1, []string{key, TicketVersionKey}, version).Result()
+			if err != nil {
+				return 0, fmt.Errorf("执行票据使用次数脚本失败: %w", err)
+			}
+		} else {
+			return 0, fmt.Errorf("执行票据使用次数脚本失败: %w", err)
+		}
 	}
 
 	// 解析结果
